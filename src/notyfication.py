@@ -1,29 +1,52 @@
 import time
+import schedule
 from plyer import notification
 
-from target_data import Database as Database
-from src.scraper import Scraper
-from .utils import util as utilities
+from data import Database
+from src.scraper import OLXScraper, OtomotoScraper
+from src.utils import util
 
 
 class Deals:
     def __init__(self):
         self.database = Database.DataBase()
-        self.target_data = self.database.target_base
+        self.new_offers = 0
 
-    def new_target(self, target: str, price_range_down, price_range_up) -> None:
-        self.database.new_target(target, price_range_down, price_range_up)
+    def search_targets(self, target) -> None:
+        self.search_otomoto()
+        # self.search_olx()
 
-    @staticmethod
-    def search_targets(self, target, price_range_down, price_range_up) -> list:
-        scraper = Scraper(target, price_range_down, price_range_up)
-        return scraper.search()
+    def search_otomoto(self):
+        lst_targets = util.convert_targets_to_class_list(self.database.all_targets())
+        for product_data in lst_targets:
+            scraper = OtomotoScraper(brand=product_data.brand,
+                                     model=product_data.model,
+                                     generation=product_data.generation,
+                                     price=product_data.price)
+            scraper.fill_form()
 
-    def notify(self, product_lst):
-        notification.notify(
-            title="New offers",
-            message=" You have got {} new offers on OLX".format(len(product_lst))
-        )
+            while True:
+                product_list = scraper.get_element_list()
+                last_element_index = util.compare(self.database, util.create_target_name(brand=product_data.brand,
+                                                                          model=product_data.model), product_list)
+                if last_element_index is not None:
+                    product_list = util.create_sublist(last_element_index, product_list)
+                    self.database.add_product(util.create_target_name(product_data.brand, product_data.model),
+                                              product_list)
+                    self.new_offers += len(product_list)
+                    break
+                else:
+                    self.database.add_product(util.create_target_name(product_data.brand, product_data.model),
+                                              product_list)
+                    self.new_offers += len(product_list)
+                    scraper.next_page()
+
+    schedule.every().day.at("10:00").do(search_targets)
+
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
+
 
 if __name__ == "__main__":
-    deals = Deals()
+    pass
